@@ -24,6 +24,7 @@ import stat
 import threading
 import time
 import weakref
+from six import BytesIO
 from paramiko import util
 from paramiko.channel import Channel
 from paramiko.message import Message
@@ -699,7 +700,7 @@ class SFTPClient(BaseSFTP, ClosingContextManager):
                     break
         return size
 
-    def get(self, remotepath, localpath, callback=None):
+    def get(self, remotepath, localpath=None, callback=None, binary=None, ret_fileobj=None):
         """
         Copy a remote file (``remotepath``) from the SFTP server to the local
         host as ``localpath``.  Any exception raised by operations will be
@@ -716,8 +717,23 @@ class SFTPClient(BaseSFTP, ClosingContextManager):
             Added the ``callback`` param
         """
         file_size = self.stat(remotepath).st_size
-        with open(localpath, 'wb') as fl:
-            size = self.getfo(remotepath, fl, callback)
+        if localpath is None:
+            bio = BytesIO()
+            size = self.getfo(remotepath, bio, callback)
+            value = bio.getvalue()
+            st_size = len(value)
+            if st_size != size:
+                raise IOError('size mismatch in get!  %d != %d' % (st_size, size))
+            if ret_fileobj:
+                bio.seek(0)
+                return bio
+            elif binary:
+                return value
+            else:
+                return value.decode('utf8')
+        else:
+            with open(localpath, 'wb') as fl:
+                size = self.getfo(remotepath, fl, callback)
         s = os.stat(localpath)
         if s.st_size != size:
             raise IOError('size mismatch in get!  %d != %d' % (s.st_size, size))
